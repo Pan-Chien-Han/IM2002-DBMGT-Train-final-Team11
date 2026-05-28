@@ -125,22 +125,30 @@ def main():
 
     try:
         print("Seeding tables (dependency order):")
-        seed_metro_stations(cur)
+
         seed_national_rail_stations(cur)
-        seed_metro_schedules(cur)
+        seed_metro_stations(cur)
+
         seed_national_rail_schedules(cur)
+        seed_metro_schedules(cur)
+
         seed_seat_layouts(cur)
         seed_users(cur)
+
         seed_national_rail_bookings(cur)
         seed_metro_travels(cur)
+
         seed_payments(cur)
         seed_feedback(cur)
+
         conn.commit()
         print("\nAll done. Database seeded successfully.")
+
     except Exception as e:
         conn.rollback()
         print(f"\nError: {e}")
         raise
+
     finally:
         cur.close()
         conn.close()
