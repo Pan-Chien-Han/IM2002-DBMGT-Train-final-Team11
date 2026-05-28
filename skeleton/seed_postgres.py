@@ -327,11 +327,12 @@ def main():
         seed_national_rail_stations(cur)
         seed_metro_stations(cur)
 
+        seed_users(cur)
+
         seed_national_rail_schedules(cur)
         seed_metro_schedules(cur)
 
         seed_seat_layouts(cur)
-        seed_users(cur)
 
         seed_national_rail_bookings(cur)
         seed_metro_travels(cur)
