@@ -1,3 +1,4 @@
+
 """
 Seed PostgreSQL with all TransitFlow mock data from train-mock-data/.
 
@@ -15,6 +16,11 @@ import sys
 
 import psycopg2
 from psycopg2.extras import execute_values
+
+import psycopg2
+from psycopg2.extras import execute_values
+
+from argon2 import PasswordHasher
 
 # ── resolve paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -195,18 +201,26 @@ def seed_seat_layouts(cur):
 
 def seed_users(cur):
     data = load("registered_users.json")
-    columns = [
-        "user_id", "full_name", "email", "password", "phone", 
-        "date_of_birth", "secret_question", "secret_answer", 
+    ph = PasswordHasher()
+
+    user_columns = [
+        "user_id", "full_name", "email", "phone",
+        "date_of_birth", "secret_question", "secret_answer",
         "registered_at", "is_active"
     ]
-    rows = []
+
+    credential_columns = [
+        "user_id", "password_hash"
+    ]
+
+    user_rows = []
+    credential_rows = []
+
     for item in data:
-        rows.append((
+        user_rows.append((
             item["user_id"],
             item["full_name"],
             item["email"],
-            item["password"],
             item.get("phone"),
             item.get("date_of_birth"),
             item.get("secret_question"),
@@ -214,8 +228,28 @@ def seed_users(cur):
             item["registered_at"],
             item["is_active"]
         ))
-    count = insert_many(cur, "registered_users", columns, rows)
-    print(f"  - Seeded {count} registered users")
+
+        credential_rows.append((
+            item["user_id"],
+            ph.hash(item["password"])
+        ))
+
+    user_count = insert_many(
+        cur,
+        "registered_users",
+        user_columns,
+        user_rows
+    )
+
+    credential_count = insert_many(
+        cur,
+        "user_credentials",
+        credential_columns,
+        credential_rows
+    )
+
+    print(f"  - Seeded {user_count} registered users")
+    print(f"  - Seeded {credential_count} user credentials")
 
 
 def seed_national_rail_bookings(cur):
