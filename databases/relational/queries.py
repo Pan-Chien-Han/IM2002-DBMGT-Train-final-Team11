@@ -33,8 +33,11 @@ import psycopg2.extras
 
 from skeleton.config import PG_DSN, VECTOR_TOP_K, VECTOR_SIMILARITY_THRESHOLD
 
+# 🔒 補上密碼安全演算法所需的套件引入
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+
+# 初始化全域密碼雜湊器，解決 'ph' is not defined 的問題
 ph = PasswordHasher()
 
 def _connect():
@@ -841,39 +844,37 @@ def login_user(email: str, password: str) -> Optional[dict]:
             ON ru.user_id = uc.user_id
         WHERE ru.email = %s
     """
-
-    with _connect() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-
-            cur.execute(sql, (email,))
-            user = cur.fetchone()
-
-            if not user:
-                return None
-
-            try:
-                ph.verify(user["password_hash"], password)
-
-                return {
-                    "user_id": user["user_id"],
-                    "email": user["email"],
-                    "full_name": user["full_name"],
-                    "phone": user["phone"],
-                    "date_of_birth": user["date_of_birth"],
-                    "is_active": user["is_active"],
-                }
-
-            except VerifyMismatchError:
-                return None
-
-def get_user_secret_question(email: str) -> Optional[str]:
-    """Return the secret question for a registered email."""
-
-    sql = """
-        SELECT secret_question
-        FROM registered_users
-        WHERE email = %s
+    Register a new user with HASHED password for security.
     """
+    suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    user_id = f"RU-{suffix}"
+    
+    # 🔒 安全升級：遵照教授指示將新密碼進行 Argon2 雜湊加密
+    hashed_password = ph.hash(password)
+    
+    sql = """
+        INSERT INTO registered_users (
+            user_id, email, full_name, first_name, surname, 
+            date_of_birth, password, secret_question, secret_answer, is_active
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+    """
+    
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                dob = f"{year_of_birth}-01-01"
+                full_name = f"{first_name.strip()} {surname.strip()}"
+                
+                cur.execute(sql, (
+                    user_id, email.strip().lower(), full_name, first_name.strip(), 
+                    surname.strip(), dob, hashed_password, secret_question, secret_answer.strip(), True
+                ))
+        return True, user_id
+    except psycopg2.errors.UniqueViolation:
+        return False, "This email is already registered."
+    except Exception as e:
+        return False, f"Registration failed: {str(e)}"
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -888,8 +889,63 @@ def get_user_secret_question(email: str) -> Optional[str]:
 
 def verify_secret_answer(email: str, answer: str) -> bool:
     """
-    Return True if the provided answer matches the stored secret answer.
+    Verify credentials using Argon2 hash verification.
     """
+    # 💡 修正關鍵：把 SQL 裡的 first_name, surname 拿掉，因為妳們的資料表只有 full_name 欄位
+    sql = """
+        SELECT user_id, email, full_name, phone, date_of_birth, is_active, password
+        FROM registered_users
+        WHERE email = %s
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, (email.strip().lower(),))
+                user = cur.fetchone()
+
+                if not user:
+                    print(f"[Login] 找不到此 Email: {email}")
+                    return None
+
+                if not user.get("is_active", True):
+                    print(f"[Login] 該帳號已被停用")
+                    return None
+
+                # 🔒 安全校驗邏輯
+                db_password = str(user["password"]).strip()
+                input_password = str(password).strip()
+                
+                try:
+                    # 情況 A：如果資料庫裡存的是雜湊值（以 $argon2 開頭），用安全方式驗證
+                    if db_password.startswith("$argon2"):
+                        ph.verify(db_password, input_password)
+                    else:
+                        # 情況 B：相容舊的明碼 mock data
+                        if db_password != input_password:
+                            raise VerifyMismatchError()
+                except (VerifyMismatchError, Exception):
+                    print("[Login] 密碼錯誤")
+                    return None
+
+                # 💡 修正關鍵：從 full_name 自動拆分出姓與名，餵給前端 ui.py，避開資料庫欄位缺失錯誤
+                name_parts = str(user["full_name"]).strip().split(" ", 1)
+                first_name = name_parts[0] if len(name_parts) > 0 else ""
+                surname = name_parts[1] if len(name_parts) > 1 else ""
+
+                # 驗證成功，組織資料回傳給 ui.py
+                return {
+                    "user_id": user["user_id"],
+                    "email": user["email"],
+                    "full_name": user["full_name"],
+                    "first_name": first_name,
+                    "surname": surname,
+                    "phone": user.get("phone"),
+                    "date_of_birth": str(user.get("date_of_birth")),
+                    "is_active": user["is_active"],
+                }
+    except Exception as e:
+        print(f"[Login System Error] 出錯: {e}")
+        return None
 
     sql = """
         SELECT secret_answer
