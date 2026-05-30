@@ -67,6 +67,10 @@
       "day_pass": "Metro day passes are purchased on the day of travel only. They are valid from 00:00 to 23:59 on the date of purchase.",
       "where_to_buy": "Tickets can be purchased via the app or at station ticket machines."
     },
+    "season_pass_rules": {
+      "advance_purchase_max_days": 7,
+      "activation": "Must be activated within 7 days of purchase and is valid for 30 consecutive days."
+    },
     "seat_selection": {
       "available": false,
       "description": "Metro services have no reserved seating. Passengers board and find available seats freely."
@@ -87,6 +91,12 @@
       },
       "age_16_and_over": {
         "description": "Passengers aged 16 and over pay the full adult fare."
+      }
+    },
+    "senior_fares": {
+      "age_65_and_over": {
+        "discount_percent": 50,
+        "description": "Passengers aged 65 and over qualify for a 50% concession discount. Valid government-issued ID must be presented upon request."
       }
     },
     "group_fares": {
