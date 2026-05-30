@@ -45,8 +45,17 @@
       "alcohol": "Alcohol consumption is not permitted on metro services or at stations."
     },
     "priority_seating": {
-      "description": "Seats marked with a yellow priority sign are reserved for elderly passengers (65+), pregnant women, passengers with disabilities, and passengers travelling with young children.",
+      "description": "Seats marked with a yellow priority sign are reserved for elderly passengers (65+), pregnant women, passengers with disabilities (including one necessary companion), and passengers travelling with young children.",
       "rule": "All other passengers must vacate priority seats immediately when requested."
+    },
+    "lost_property": {
+      "how_to_report": "Report lost items via the in-app customer service chat or visit the station information desks.",
+      "storage_retention_days": 30,
+      "notes": "Perishable items are disposed of immediately for hygiene purposes. The operator is not liable for personal belongings left behind on metro property."
+    },
+    "infant_facilities": {
+      "baby_changing": "Available at major Metro interchange stations (MS01, MS05, MS10).",
+      "breastfeeding": "Passengers are welcome to breastfeed anywhere on station premises or onboard metro carriages."
     },
     "prohibited_items": [
       "Flammable or explosive materials",
@@ -117,13 +126,22 @@
       "rule": "Passengers should check carriage markings before boarding if a quiet journey is preferred."
     },
     "priority_seating": {
-      "description": "Dedicated priority seats are available in all coaches, marked with a blue priority sign.",
-      "rule": "Priority seats are reserved for elderly passengers (65+), pregnant women, passengers with disabilities, and passengers travelling with young children. Other passengers must vacate on request."
+      "description": "Dedicated priority seats are available in all coaches, marked with a blue priority sign. These are reserved for elderly passengers (65+), pregnant women, passengers with disabilities (including one companion), and passengers travelling with young children.",
+      "rule": "Priority seats must be vacated immediately when requested by eligible passengers."
     },
     "accessibility": {
       "wheelchair_access": "All national rail stations are wheelchair accessible. Ramps are available on request from platform staff.",
       "assisted_boarding": "Passengers requiring assistance should contact customer service at least 24 hours before travel.",
       "priority_boarding": "Passengers with mobility difficulties are welcome to board first. Please inform platform staff."
+    },
+    "lost_property": {
+      "how_to_report": "Please report lost property via the in-app customer service panel or visit the central Lost Property Office located at Central Station (NR01).",
+      "storage_retention_days": 30,
+      "notes": "A valid photo ID matching the description of the claim is required for retrieval. Unclaimed items are disposed of or donated after 30 days."
+    },
+    "infant_facilities": {
+      "baby_changing": "Available at all National Rail stations within the accessible restroom facilities.",
+      "breastfeeding": "Permitted in all passenger lounges and coaches. Complimentary hot water for preparing baby formula can be requested at the central station counter."
     },
     "prohibited_items": [
       "Flammable or explosive materials",
