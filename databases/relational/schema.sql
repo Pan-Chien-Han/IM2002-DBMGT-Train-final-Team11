@@ -74,13 +74,21 @@ CREATE TABLE IF NOT EXISTS registered_users (
     user_id TEXT PRIMARY KEY,
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
+   
     phone TEXT,
     date_of_birth DATE,
     secret_question TEXT,
     secret_answer TEXT,
     registered_at TIMESTAMPTZ NOT NULL,
     is_active BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_credentials (
+    credential_id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (user_id) REFERENCES registered_users(user_id)
 );
 
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
@@ -211,4 +219,6 @@ CREATE TABLE IF NOT EXISTS policy_documents (
 );
 
 -- Index for fast cosine similarity search
-CREATE INDEX IF NOT EXISTS ON policy_documents USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS policy_documents_embedding_idx
+ON policy_documents
+USING hnsw (embedding vector_cosine_ops);

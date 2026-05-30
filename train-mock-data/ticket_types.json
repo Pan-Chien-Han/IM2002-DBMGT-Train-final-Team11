@@ -73,5 +73,91 @@
       "refund_rule": "RF004",
       "notes": "A day pass offers better value than individual single tickets for passengers making 3 or more metro trips in a day. Tap in and out normally at each station."
     }
+  },
+  {
+    "ticket_type": "child_discount",
+    "display_name": "Child Ticket",
+    "available_on": ["metro", "national_rail"],
+    "description": "Discounted ticket for children aged 3 to 12. Children under 3 travel free when accompanied by a paying adult.",
+    "metro": {
+      "pricing_model": "discounted_stops_based",
+      "formula": "amount = (base_fare_usd + (stops_travelled × per_stop_rate_usd)) × 0.50",
+      "example": "A 3-stop journey: (0.80 + (3 × 0.30)) × 0.5 = $0.85",
+      "fare_class": null,
+      "seat_assignment": false,
+      "validity": "Travel date only. Ticket expires at midnight on the travel date.",
+      "advance_purchase": false,
+      "changes_allowed": false,
+      "refundable": true,
+      "refund_rule": "RF003"
+    },
+    "national_rail": {
+      "pricing_model": "discounted_stops_based_with_fare_class",
+      "formula": "amount = (base_fare_usd + (stops_travelled × per_stop_rate_usd)) × 0.50, rates vary by fare_class and service_type",
+      "fare_classes": ["standard"],
+      "seat_assignment": true,
+      "validity": "Selected travel date and scheduled service only.",
+      "advance_purchase": true,
+      "advance_purchase_max_days": 90,
+      "changes_allowed": true,
+      "change_fee_usd": 0.50,
+      "change_deadline": "At least 24 hours before scheduled departure",
+      "refundable": true,
+      "refund_rule": "RF001 (normal service), RF002 (express service)"
+    }
+  },
+  {
+    "ticket_type": "concession_senior_disabled",
+    "display_name": "Senior & Charity Concession Ticket",
+    "available_on": ["metro", "national_rail"],
+    "description": "Concessionary fare for passengers aged 65 or above, and registered individuals with disabilities along with one necessary companion.",
+    "metro": {
+      "pricing_model": "discounted_stops_based",
+      "formula": "amount = (base_fare_usd + (stops_travelled × per_stop_rate_usd)) × 0.50",
+      "fare_class": null,
+      "seat_assignment": false,
+      "validity": "Travel date only.",
+      "advance_purchase": false,
+      "changes_allowed": false,
+      "refundable": true,
+      "refund_rule": "RF003",
+      "notes": "Passengers must carry valid government-issued ID or disability cards for verification at the gates."
+    },
+    "national_rail": {
+      "pricing_model": "discounted_stops_based_with_fare_class",
+      "formula": "amount = (base_fare_usd + (stops_travelled × per_stop_rate_usd)) × 0.50",
+      "fare_classes": ["standard", "first"],
+      "seat_assignment": true,
+      "validity": "Selected travel date and scheduled service only.",
+      "advance_purchase": true,
+      "advance_purchase_max_days": 90,
+      "changes_allowed": true,
+      "change_fee_usd": 0.50,
+      "change_deadline": "At least 24 hours before scheduled departure",
+      "refundable": true,
+      "refund_rule": "RF001 (normal service), RF002 (express service)"
+    }
+  },
+  {
+    "ticket_type": "monthly_season_pass",
+    "display_name": "Metro Monthly Season Pass",
+    "available_on": ["metro"],
+    "description": "Unlimited travel across all metro lines (M1, M2, M3, M4) for 30 consecutive calendar days starting from the date of first activation. Not valid on national rail.",
+    "metro": {
+      "pricing_model": "flat_rate",
+      "price_usd": 45.00,
+      "fare_class": null,
+      "seat_assignment": false,
+      "unlimited_journeys": true,
+      "valid_lines": ["M1", "M2", "M3", "M4"],
+      "validity": "30 days from activation. Automatically expires at 23:59 on the 30th day.",
+      "advance_purchase": true,
+      "advance_purchase_max_days": 7,
+      "changes_allowed": false,
+      "transferable": false,
+      "refundable": true,
+      "refund_rule": "RF004",
+      "notes": "Non-refundable once the pass has been activated or used for its first journey. Highly recommended for commuters making more than 26 trips per month."
+    }
   }
 ]
