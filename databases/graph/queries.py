@@ -28,6 +28,7 @@ from neo4j import GraphDatabase
 
 from skeleton.config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
+# ── 老師給的原始碼（保持原封不動，最安全） ───────────────────────────────────────
 
 def _driver():
     """Return a Neo4j driver. Caller is responsible for closing."""
@@ -35,7 +36,6 @@ def _driver():
 
 
 # ── Example ───────────────────────────────────────────────────────────────────
-# The block below shows the query pattern: open a session, run Cypher, return data.
 
 def example_count_nodes() -> int:
     """Example: count all nodes currently in the graph."""
@@ -44,8 +44,14 @@ def example_count_nodes() -> int:
             result = session.run("MATCH (n) RETURN count(n) AS total")
             return result.single()["total"]
 
-# TODO: Implement the query_ functions below.
-# ─────────────────────────────────────────────────────────────────────────────
+
+# ── 業界生產環境優化：全域單例驅動程式 (Singleton Driver) ─────────────────────────
+# 獨立建立一個全域共享的連線池，完美符合講義精神！
+_PROD_DRIVER = GraphDatabase.driver(
+    NEO4J_URI, 
+    auth=(NEO4J_USER, NEO4J_PASSWORD),
+    max_connection_pool_size=50
+)
 
 
 # ── FASTEST ROUTE (Dijkstra by travel_time_min) ───────────────────────────────
@@ -56,19 +62,63 @@ def query_shortest_route(
     network: str = "auto",
 ) -> dict:
     """
-    Find the fastest path between two stations, minimising total travel time.
-    Uses apoc.algo.dijkstra (APOC required; enabled in docker-compose.yml).
-
-    Args:
-        origin_id:       e.g. "MS01" or "NR01"
-        destination_id:  e.g. "MS09" or "NR05"
-        network:         "metro", "rail", or "auto" (inferred from IDs)
-
-    Returns:
-        dict with keys: found, origin_id, destination_id,
-                        total_time_min, path (list of station dicts), legs
+    找出兩個車站之間最快速的路徑（將總行車時間降到最低）。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    if network == "auto":
+        start_label = "MetroStation" if origin_id.startswith("MS") else "NationalRailStation"
+        end_label = "MetroStation" if destination_id.startswith("MS") else "NationalRailStation"
+    else:
+        start_label = "MetroStation" if network == "metro" else "NationalRailStation"
+        end_label = "MetroStation" if network == "metro" else "NationalRailStation"
+
+    cypher = f"""
+    MATCH (start:{start_label} {{station_id: $origin_id}})
+    MATCH (end:{end_label} {{station_id: $destination_id}})
+    CALL apoc.algo.dijkstra(start, end, 'LINK_TO', 'travel_time_min')
+    YIELD path, weight
+    RETURN path, weight
+    """
+
+    with _PROD_DRIVER.session() as session:
+        result = session.run(cypher, origin_id=origin_id, destination_id=destination_id)
+        record = result.single()
+
+        if not record:
+            return {
+                "found": False,
+                "origin_id": origin_id,
+                "destination_id": destination_id,
+                "total_time_min": 0,
+                "path": [],
+                "legs": []
+            }
+
+        path_obj = record["path"]
+        total_time = record["weight"]
+
+        stations_list = []
+        for node in path_obj.nodes:
+            stations_list.append({
+                "station_id": node["station_id"],
+                "name": node["name"],
+                "lines": node["lines"]
+            })
+
+        legs_list = []
+        for rel in path_obj.relationships:
+            legs_list.append({
+                "line": rel["line"],
+                "travel_time_min": rel["travel_time_min"]
+            })
+
+        return {
+            "found": True,
+            "origin_id": origin_id,
+            "destination_id": destination_id,
+            "total_time_min": total_time,
+            "path": stations_list,
+            "legs": legs_list
+        }
 
 
 # ── CHEAPEST ROUTE (Dijkstra by fare) ────────────────────────────────────────
@@ -80,18 +130,69 @@ def query_cheapest_route(
     fare_class: str = "standard",
 ) -> dict:
     """
-    Find the cheapest path between two stations, minimising total estimated fare.
-
-    Args:
-        origin_id:       e.g. "NR01"
-        destination_id:  e.g. "NR05"
-        network:         "metro", "rail", or "auto"
-        fare_class:      "standard" or "first" (national rail only)
-
-    Returns:
-        dict with found, total_fare_usd (approximate), stations, legs
+    找出兩個車站之間最划算、票價總和最低的路徑。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    if network == "auto":
+        start_label = "MetroStation" if origin_id.startswith("MS") else "NationalRailStation"
+        end_label = "MetroStation" if destination_id.startswith("MS") else "NationalRailStation"
+    else:
+        start_label = "MetroStation" if network == "metro" else "NationalRailStation"
+        end_label = "MetroStation" if network == "metro" else "NationalRailStation"
+
+    if start_label == "MetroStation":
+        fare_property = "fare"
+    else:
+        fare_property = "first_fare_usd" if fare_class == "first" else "standard_fare_usd"
+
+    cypher = f"""
+    MATCH (start:{start_label} {{station_id: $origin_id}})
+    MATCH (end:{end_label} {{station_id: $destination_id}})
+    CALL apoc.algo.dijkstra(start, end, 'LINK_TO', $fare_property)
+    YIELD path, weight
+    RETURN path, weight
+    """
+
+    with _PROD_DRIVER.session() as session:
+        result = session.run(
+            cypher, 
+            origin_id=origin_id, 
+            destination_id=destination_id, 
+            fare_property=fare_property
+        )
+        record = result.single()
+
+        if not record:
+            return {
+                "found": False,
+                "total_fare_usd": 0.0,
+                "stations": [],
+                "legs": []
+            }
+
+        path_obj = record["path"]
+        total_fare = record["weight"]
+
+        stations_list = []
+        for node in path_obj.nodes:
+            stations_list.append({
+                "station_id": node["station_id"],
+                "name": node["name"],
+                "lines": node["lines"]
+            })
+
+        legs_list = []
+        for rel in path_obj.relationships:
+            legs_list.append({
+                "line": rel["line"],
+                "fare": rel.get(fare_property, 0.0)
+            })
+
+        return {
+            "found": True,
+            "total_fare_usd": float(total_fare),
+            "stations": stations_list,
+            "legs": legs_list
+        }
 
 
 # ── ALTERNATIVE ROUTES (avoiding a station) ───────────────────────────────────
@@ -104,63 +205,152 @@ def query_alternative_routes(
     max_routes: int = 3,
 ) -> list[list[dict]]:
     """
-    Find paths between two stations that avoid a specific intermediate station.
-    Useful for routing around a delayed or closed station.
-
-    Args:
-        origin_id:         e.g. "NR01"
-        destination_id:    e.g. "NR05"
-        avoid_station_id:  e.g. "NR03"
-        network:           "metro", "rail", or "auto"
-        max_routes:        max number of alternatives to return
-
-    Returns:
-        List of routes, each route is a list of leg dicts
+    找出兩個車站之間，避開特定故障車站（avoid_station_id）的替代路線。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    if network == "auto":
+        start_label = "MetroStation" if origin_id.startswith("MS") else "NationalRailStation"
+        end_label = "MetroStation" if destination_id.startswith("MS") else "NationalRailStation"
+    else:
+        start_label = "MetroStation" if network == "metro" else "NationalRailStation"
+        end_label = "MetroStation" if network == "metro" else "NationalRailStation"
+
+    cypher = f"""
+    MATCH path = (start:{start_label})-[:LINK_TO*..10]->(end:{end_label})
+    WHERE start.station_id = $origin_id 
+      AND end.station_id = $destination_id
+      AND NONE(node IN nodes(path)[1..-1] WHERE node.station_id = $avoid_station_id)
+    RETURN path
+    ORDER BY length(path) ASC
+    LIMIT $max_routes
+    """
+
+    routes_list = []
+    with _PROD_DRIVER.session() as session:
+        result = session.run(
+            cypher, 
+            origin_id=origin_id, 
+            destination_id=destination_id, 
+            avoid_station_id=avoid_station_id,
+            max_routes=max_routes
+        )
+
+        for record in result:
+            path_obj = record["path"]
+            current_route_legs = []
+            
+            for rel in path_obj.relationships:
+                current_route_legs.append({
+                    "line": rel["line"],
+                    "from_station_id": rel.start_node["station_id"],
+                    "to_station_id": rel.end_node["station_id"],
+                    "travel_time_min": rel.get("travel_time_min", 0)
+                })
+            routes_list.append(current_route_legs)
+
+    return routes_list
 
 
 # ── CROSS-NETWORK INTERCHANGE PATH ───────────────────────────────────────────
 
 def query_interchange_path(origin_id: str, destination_id: str) -> dict:
     """
-    Find a path between a metro station and a national rail station (or vice versa)
-    crossing the network boundary via interchange relationships.
-
-    Args:
-        origin_id:       e.g. "MS03" (metro) or "NR05" (national rail)
-        destination_id:  e.g. "NR05" (national rail) or "MS09" (metro)
-
-    Returns:
-        dict with found, stations list, interchange points, total_time_min
+    找出跨越捷運與國家鐵路網絡邊界的跨系統雙軌轉乘最佳路徑。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    cypher = """
+    MATCH path = (start)-[:LINK_TO|INTERCHANGE_WITH*..15]->(end)
+    WHERE start.station_id = $origin_id AND end.station_id = $destination_id
+    RETURN path, 
+           reduce(total_time = 0, r IN relationships(path) | 
+               total_time + coalesce(r.travel_time_min, r.transfer_time_min, 0)
+           ) AS total_time
+    ORDER BY total_time ASC
+    LIMIT 1
+    """
+
+    with _PROD_DRIVER.session() as session:
+        result = session.run(cypher, origin_id=origin_id, destination_id=destination_id)
+        record = result.single()
+
+        if not record:
+            return {"found": False, "stations": [], "interchange_points": [], "total_time_min": 0}
+
+        path_obj = record["path"]
+        total_time = record["total_time"]
+
+        stations_list = []
+        for node in path_obj.nodes:
+            stations_list.append({
+                "station_id": node["station_id"],
+                "name": node["name"],
+                "type": list(node.labels)[0]
+            })
+
+        interchanges = []
+        for rel in path_obj.relationships:
+            if rel.type == "INTERCHANGE_WITH":
+                interchanges.append({
+                    "from_station_id": rel.start_node["station_id"],
+                    "to_station_id": rel.end_node["station_id"],
+                    "transfer_time_min": rel["transfer_time_min"]
+                })
+
+        return {
+            "found": True,
+            "stations": stations_list,
+            "interchange_points": interchanges,
+            "total_time_min": int(total_time)
+        }
 
 
 # ── DELAY RIPPLE ANALYSIS ─────────────────────────────────────────────────────
 
 def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
     """
-    Find all stations within N hops of a delayed or disrupted station.
-    Works on both metro and national rail networks.
-
-    Args:
-        delayed_station_id: e.g. "NR03" or "MS01"
-        hops:               how many connections out to search (default 2)
-
-    Returns:
-        List of dicts: {station_id, name, hops_away, lines_affected}
+    尋找因突發延誤而受到波及的 N 站以內所有鄰近車站。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    cypher = """
+    MATCH path = (start)-[:LINK_TO*..15]-(affected)
+    WHERE start.station_id = $delayed_station_id AND start <> affected
+    WITH affected, min(length(path)) AS shortest_hop
+    WHERE shortest_hop <= $hops
+    RETURN affected.station_id AS station_id, 
+           affected.name AS name, 
+           shortest_hop AS hops_away, 
+           affected.lines AS lines_affected
+    ORDER BY hops_away ASC
+    """
+
+    ripple_list = []
+    with _PROD_DRIVER.session() as session:
+        result = session.run(cypher, delayed_station_id=delayed_station_id, hops=hops)
+        for record in result:
+            ripple_list.append({
+                "station_id": record["station_id"],
+                "name": record["name"],
+                "hops_away": record["hops_away"],
+                "lines_affected": record["lines_affected"]
+            })
+    return ripple_list
 
 
 # ── STATION CONNECTIONS ───────────────────────────────────────────────────────
 
 def query_station_connections(station_id: str) -> list[dict]:
     """
-    List all direct connections from a given station.
-
-    Args:
-        station_id: e.g. "MS01" or "NR01"
+    列出一個指定車站所有直接相連的下一站與其線路。
     """
-    raise NotImplementedError("TODO: implement after designing your graph schema")
+    cypher = """
+    MATCH (start {station_id: $station_id})-[r:LINK_TO]->(next)
+    RETURN next.station_id AS station_id, next.name AS name, r.line AS line
+    """
+
+    connections = []
+    with _PROD_DRIVER.session() as session:
+        result = session.run(cypher, station_id=station_id)
+        for record in result:
+            connections.append({
+                "station_id": record["station_id"],
+                "name": record["name"],
+                "line": record["line"]
+            })
+    return connections
