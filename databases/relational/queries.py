@@ -66,9 +66,6 @@ def example_query() -> dict:
             cur.execute("SELECT current_database() AS db;")
             return dict(cur.fetchone())
 
-# TODO: Implement the query_ and execute_ functions below.
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 # ── NATIONAL RAIL AVAILABILITY ────────────────────────────────────────────────
 
