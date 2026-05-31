@@ -36,6 +36,10 @@ from skeleton import config as cfg
 # 初始化全域密碼雜湊器，解決 'ph' is not defined 的問題
 ph = PasswordHasher()
 
+# 💡 新增這兩行，定義 RAG 向量搜尋所需的常數
+VECTOR_TOP_K = 5
+VECTOR_SIMILARITY_THRESHOLD = 0.3
+
 def _connect():
     """Return a new psycopg2 connection with autocommit enabled."""
     conn = psycopg2.connect(PG_DSN)
