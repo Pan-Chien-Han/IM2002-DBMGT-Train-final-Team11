@@ -655,6 +655,17 @@ JSON:"""
         if debug:
             debug_info.append(f"**Fallback:** {reason} → {name}({params})")
 
+    # 0. Policy / refund / compensation questions — override wrong tool selections
+    _policy_triggers = {
+        "refund", "compensation", "delay compensation", "delayed",
+        "delay", "entitled", "claim", "policy", "cancellation",
+        "cancel refund", "luggage", "bicycle", "pet", "conduct"
+    }
+
+    if any(kw in _lower for kw in _policy_triggers) and not _tool_selected("search_policy", "query"):
+        _fallback("search_policy", {"query": user_message}, "policy/refund/compensation query")
+        
+
     # 1. Route / directions / path — also overrides wrong-tool selections
     _route_triggers = {"fastest route", "quickest route", "shortest route", "cheapest route",
                        "best route", "how to get", "directions from", "route from", "route to",
