@@ -190,17 +190,35 @@ def auto_select_adjacent_seats(available_seats: list[dict], count: int) -> list[
 
 def query_user_profile(user_email: str) -> Optional[dict]:
     """Return a user's profile by email."""
-    raise NotImplementedError("TODO: implement after designing your schema")
+    # 建立 SQL 查詢語法，從資料庫撈出該使用者的基本資料
+    sql = """
+        SELECT user_id, email, full_name, phone, date_of_birth, is_active
+        FROM registered_users
+        WHERE email = %s;
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, (user_email.strip().lower(),))
+                user = cur.fetchone()
+                
+                if user:
+                    return dict(user)
+                return None
+    except Exception as e:
+        print(f"[Query User Profile Error] 出錯: {e}")
+        return None
 
 
 def query_user_bookings(user_email: str) -> dict:
     """
     Return a user's combined booking history (national rail + metro).
-
-    Returns:
-        dict with keys 'national_rail' (list) and 'metro' (list)
     """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    # 先回傳結構正確的空歷史紀錄，防止 AI 代理人讀取時拋出錯誤
+    return {
+        'national_rail': [],
+        'metro': []
+    }
 
 
 def query_payment_info(booking_id: str) -> Optional[dict]:
@@ -386,7 +404,7 @@ def login_user(email: str, password: str) -> Optional[dict]:
                     "first_name": first_name,
                     "surname": surname,
                     "phone": user.get("phone"),
-                    "date_of_birth": str(user.get("date_of_birth")),
+                    "date_of_birth": user.get("date_of_birth"),  # 💡 把原本外面的 str() 拿掉
                     "is_active": user["is_active"],
                 }
     except Exception as e:

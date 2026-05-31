@@ -58,7 +58,7 @@ def query_shortest_route(
     cypher = f"""
     MATCH (start:{start_label} {{station_id: $origin_id}})
     MATCH (end:{end_label} {{station_id: $destination_id}})
-    CALL apoc.algo.dijkstra(start, end, 'LINK_TO', 'travel_time_min')
+    CALL apoc.algo.dijkstra(start, end, 'link_to', 'travel_time_min')
     YIELD path, weight
     RETURN path, weight
     """
