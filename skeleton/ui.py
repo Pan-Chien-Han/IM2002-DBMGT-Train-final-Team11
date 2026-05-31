@@ -416,11 +416,13 @@ with gr.Blocks(title="TransitFlow") as demo:
     )
     forgot_link_btn.click(
         fn=show_forgot_panel,
-        outputs=[login_panel, register_panel, forgot_panel],
+        inputs=[],
+        outputs=[login_panel, register_panel, forgot_panel]
     )
     forgot_back_btn.click(
         fn=show_login_panel,
-        outputs=[login_panel, register_panel, forgot_panel],
+        inputs=[],
+        outputs=[login_panel, register_panel, forgot_panel]
     )
 
     # Login
