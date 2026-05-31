@@ -665,7 +665,30 @@ JSON:"""
     if any(kw in _lower for kw in _policy_triggers) and not _tool_selected("search_policy", "query"):
         _fallback("search_policy", {"query": user_message}, "policy/refund/compensation query")
         
+    # 0.5 Booking request — if not logged in, do not call tools
+    _booking_triggers = {
+        "book me", "book a", "booking", "make a booking",
+        "reserve", "reservation", "buy a ticket", "standard ticket",
+        "first class ticket"
+    }
 
+    if any(kw in _lower for kw in _booking_triggers):
+        if not current_user_email:
+            tool_calls = []
+            if debug:
+                debug_info.append("**Fallback:** booking request without login → no tool call")
+        elif _two_stations and not _tool_selected("check_national_rail_availability", "origin_id", "destination_id"):
+            _travel_date = next(
+                (w for w in _lower.split() if re.match(r'\d{4}-\d{2}-\d{2}', w)), None
+            )
+            _params = {
+                "origin_id": _station_ids[0].upper(),
+                "destination_id": _station_ids[1].upper(),
+            }
+            if _travel_date:
+                _params["travel_date"] = _travel_date
+            _fallback("check_national_rail_availability", _params, "booking request")
+            
     # 1. Route / directions / path — also overrides wrong-tool selections
     _route_triggers = {"fastest route", "quickest route", "shortest route", "cheapest route",
                        "best route", "how to get", "directions from", "route from", "route to",
