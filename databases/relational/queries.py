@@ -59,7 +59,7 @@ def _gen_payment_id() -> str:
 
 # ── Example ───────────────────────────────────────────────────────────────────
 # The block below shows the query pattern: open a cursor, run SQL, return rows.
-# Use _connect() for read-only queries; for write operations use a manual.
+# Use _connect() for read-only queries; for write operations use a manual...
 # connection with conn.commit() / conn.rollback() (see execute_booking below).
 
 def example_query() -> dict:
