@@ -89,7 +89,60 @@ def query_national_rail_availability(
         destination_id:  e.g. "NR05"
         travel_date:     e.g. "2025-06-01" — used to count bookings; omit for general info
     """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    # 1. 查詢同時停靠起點與終點，且起點站順序在終點站之前的班次
+    sql_schedules = """
+        SELECT 
+            schedule_id, line, service_type, direction, 
+            origin_station_id, destination_station_id,
+            stops_in_order, first_train_time, last_train_time, 
+            frequency_min, fare_classes
+        FROM national_rail_schedules
+        WHERE %s = ANY(stops_in_order)
+          AND %s = ANY(stops_in_order)
+          AND array_position(stops_in_order, %s) < array_position(stops_in_order, %s);
+    """
+    
+    # 2. 用來統計該班次在特定日期已經有多少張確認的訂票
+    sql_bookings_count = """
+        SELECT COUNT(*) as booked_seats
+        FROM national_rail_bookings
+        WHERE schedule_id = %s 
+          AND travel_date = %s
+          AND status = 'confirmed';
+    """
+
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # 撈出符合路線與站點順序的火車班次
+                cur.execute(sql_schedules, (origin_id, destination_id, origin_id, destination_id))
+                schedules = cur.fetchall()
+                
+                results = []
+                for sch in schedules:
+                    sch_dict = dict(sch)
+                    sch_dict["booked_seats"] = 0
+                    
+                    # 如果有傳入 travel_date，計算當天的佔用座位數
+                    if travel_date:
+                        cur.execute(sql_bookings_count, (sch_dict["schedule_id"], travel_date))
+                        bk_res = cur.fetchone()
+                        if bk_res and bk_res["booked_seats"]:
+                            sch_dict["booked_seats"] = bk_res["booked_seats"]
+                    
+                    # 將 TIME 物件轉為字串，避免前端/LLM 解析 JSON 時崩潰
+                    if sch_dict.get("first_train_time"):
+                        sch_dict["first_train_time"] = sch_dict["first_train_time"].strftime("%H:%M")
+                    if sch_dict.get("last_train_time"):
+                        sch_dict["last_train_time"] = sch_dict["last_train_time"].strftime("%H:%M")
+                        
+                    results.append(sch_dict)
+                    
+                return results
+
+    except Exception as e:
+        print(f"[National Rail Availability Error] 出錯: {e}")
+        return []
 
 
 def query_national_rail_fare(
