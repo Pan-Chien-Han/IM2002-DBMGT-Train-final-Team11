@@ -203,37 +203,45 @@ def seed_users(cur):
     data = load("registered_users.json")
     ph = PasswordHasher()
 
+    # 💡 修正 1：registered_users 的欄位，移除安全問答（因為 schema 裡沒有這兩欄）
     user_columns = [
         "user_id", "full_name", "email", "phone",
-        "date_of_birth", "secret_question", "secret_answer",
-        "registered_at", "is_active"
+        "date_of_birth", "registered_at", "is_active"
     ]
 
+    # 💡 修正 2：user_credentials 欄位，加入 secret_question 與 secret_answer_hash
     credential_columns = [
-        "user_id", "password_hash"
+        "user_id", "password_hash", "secret_question", "secret_answer_hash"
     ]
 
     user_rows = []
     credential_rows = []
 
     for item in data:
+        # 1. 準備寫入 registered_users 的基本資料
         user_rows.append((
             item["user_id"],
             item["full_name"],
             item["email"],
             item.get("phone"),
             item.get("date_of_birth"),
-            item.get("secret_question"),
-            item.get("secret_answer"),
             item["registered_at"],
             item["is_active"]
         ))
 
+        # 🔒 安全防護：比照 queries.py，將密碼與安全問答都在記憶體中轉為 Argon2 雜湊
+        raw_password = item["password"]
+        raw_answer = item.get("secret_answer", "").strip().lower()  # 轉小寫再雜湊，驗證才不會因大小寫卡住
+
+        # 2. 準備寫入 user_credentials 的憑證資料
         credential_rows.append((
             item["user_id"],
-            ph.hash(item["password"])
+            ph.hash(raw_password),                       # 密碼 HASH
+            item.get("secret_question"),                  # 提示問題明碼
+            ph.hash(raw_answer) if raw_answer else ""   # 答案 HASH
         ))
 
+    # 執行批次寫入基本資料表
     user_count = insert_many(
         cur,
         "registered_users",
@@ -241,6 +249,7 @@ def seed_users(cur):
         user_rows
     )
 
+    # 執行批次寫入憑證安全表
     credential_count = insert_many(
         cur,
         "user_credentials",
