@@ -22,21 +22,17 @@ are already implemented — do not modify them.
 
 from __future__ import annotations
 
+import os
 import json
-import random
-import string
-from datetime import datetime, timezone
-from typing import Optional
-
 import psycopg2
 import psycopg2.extras
-
-from skeleton.config import PG_DSN, VECTOR_TOP_K, VECTOR_SIMILARITY_THRESHOLD
-
-# 🔒 補上密碼安全演算法所需的套件引入
+from datetime import datetime, timezone
+from typing import Optional
+import random
+import string
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-
+from skeleton import config as cfg
 # 初始化全域密碼雜湊器，解決 'ph' is not defined 的問題
 ph = PasswordHasher()
 
@@ -331,44 +327,44 @@ def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | st
 
 
 # ── AUTHENTICATION QUERIES ────────────────────────────────────────────────────
+def _connect():
+    return psycopg2.connect(
+        host=cfg.PG_HOST,
+        port=cfg.PG_PORT,
+        dbname=cfg.PG_DB,
+        user=cfg.PG_USER,
+        password=cfg.PG_PASSWORD,
+    )
 
-def register_user(
-    email: str,
-    first_name: str,
-    surname: str,
-    year_of_birth: int,
-    password: str,
-    secret_question: str,
-    secret_answer: str,
-) -> tuple[bool, str]:
+def register_user(first_name: str, surname: str, email: str, password: str, secret_question: str, secret_answer: str, phone: str = None, date_of_birth: str = None):
     """
-    Register a new user with HASHED password distributed into both registered_users 
-    and user_credentials tables according to schema.sql.
+    Register a new user with HASHED password and secret answer distributed into both 
+    registered_users and user_credentials tables according to schema.sql.
     """
     suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     user_id = f"RU-{suffix}"
     
-    # 🔒 安全升級：遵照教授指示將新密碼進行 Argon2 雜湊加密
+    # 🔒 安全升級：密碼與安全問答全部進行 Argon2 雜湊加密
     hashed_password = ph.hash(password)
+    hashed_answer = ph.hash(secret_answer.strip().lower()) # 轉小寫再雜湊，確保驗證時大小寫不敏感
     
-    # 💡 修正 1：寫入基本資料表（拿掉不存在的 password 欄位）
+    # 💡 修正 1：移除非此資料表的欄位，加入 phone 與 date_of_birth
     sql_user = """
         INSERT INTO registered_users (
-            user_id, email, full_name, secret_question, secret_answer, registered_at, is_active
+            user_id, email, full_name, phone, date_of_birth, registered_at, is_active
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s);
     """
     
-    # 💡 修正 2：將加密後的密碼寫入專屬的憑證表
+    # 💡 修正 2：將密碼雜湊與安全問答雜湊一起寫入憑證表
     sql_cred = """
-        INSERT INTO user_credentials (user_id, password_hash, created_at)
-        VALUES (%s, %s, %s);
+        INSERT INTO user_credentials (user_id, password_hash, secret_question, secret_answer_hash, created_at)
+        VALUES (%s, %s, %s, %s, %s);
     """
     
     conn = None
     try:
-        # 開啟手動 Commit 模式確保兩張表同時寫入成功
-        conn = psycopg2.connect(PG_DSN)
+        conn = _connect()
         conn.autocommit = False
         
         with conn.cursor() as cur:
@@ -378,11 +374,11 @@ def register_user(
             # 1. 寫入 registered_users
             cur.execute(sql_user, (
                 user_id, email.strip().lower(), full_name, 
-                secret_question, secret_answer.strip(), now_time, True
+                phone, date_of_birth, now_time, True
             ))
             
             # 2. 寫入 user_credentials
-            cur.execute(sql_cred, (user_id, hashed_password, now_time))
+            cur.execute(sql_cred, (user_id, hashed_password, secret_question, hashed_answer, now_time))
             
         conn.commit()
         return True, user_id
@@ -400,7 +396,7 @@ def login_user(email: str, password: str) -> Optional[dict]:
     """
     Verify credentials using Argon2 hash verification against user_credentials table.
     """
-    # 💡 終極修正：利用 JOIN 將 registered_users 與 user_credentials 連接，撈取正確的 password_hash
+
     sql = """
         SELECT 
             ru.user_id, 
@@ -429,23 +425,23 @@ def login_user(email: str, password: str) -> Optional[dict]:
                     print(f"[Login] 該帳號已被停用")
                     return None
 
-                # 🔒 安全校驗邏輯（配合 uc.password_hash 欄位）
+
                 db_password = str(user["password_hash"]).strip()
                 input_password = str(password).strip()
                 
                 try:
-                    # 情況 A：如果是安全的 Argon2 雜湊密碼
+                    # 🔒 安全校驗邏輯：如果是相容明碼（非 $argon2 開頭），就直接比對；否則用 ph.verify
                     if db_password.startswith("$argon2"):
                         ph.verify(db_password, input_password)
                     else:
-                        # 情況 B：相容未加密的明碼 mock data
+
                         if db_password != input_password:
                             raise VerifyMismatchError()
                 except (VerifyMismatchError, Exception):
                     print("[Login] 密碼錯誤")
                     return None
 
-                # 💡 從 full_name 自動分割出姓與名，完美餵給前端 ui.py
+
                 name_parts = str(user["full_name"]).strip().split(" ", 1)
                 first_name = name_parts[0] if len(name_parts) > 0 else ""
                 surname = name_parts[1] if len(name_parts) > 1 else ""
@@ -457,29 +453,83 @@ def login_user(email: str, password: str) -> Optional[dict]:
                     "first_name": first_name,
                     "surname": surname,
                     "phone": user.get("phone"),
-                    "date_of_birth": user.get("date_of_birth"),  # 💡 把原本外面的 str() 拿掉
+                    "date_of_birth": user.get("date_of_birth"),
                     "is_active": user["is_active"],
                 }
     except Exception as e:
         print(f"[Login System Error] 出錯: {e}")
         return None
-
+    
 
 def get_user_secret_question(email: str) -> Optional[str]:
     """Return the secret question for a registered email, or None if not found."""
-    raise NotImplementedError("TODO: implement after designing your schema")
-
+    sql = """
+        SELECT uc.secret_question 
+        FROM user_credentials uc
+        JOIN registered_users ru ON uc.user_id = ru.user_id
+        WHERE ru.email = %s
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (email.strip().lower(),))
+                res = cur.fetchone()
+                return res[0] if res else None
+    except Exception as e:
+        print(f"[Get Question Error]: {e}")
+        return None
 
 def verify_secret_answer(email: str, answer: str) -> bool:
     """Return True if the provided answer matches the stored secret answer (case-insensitive)."""
-    raise NotImplementedError("TODO: implement after designing your schema")
-
+    sql = """
+        SELECT uc.secret_answer_hash 
+        FROM user_credentials uc
+        JOIN registered_users ru ON uc.user_id = ru.user_id
+        WHERE ru.email = %s
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (email.strip().lower(),))
+                res = cur.fetchone()
+                if not res:
+                    return False
+                
+                db_answer_hash = res[0]
+                input_answer = answer.strip().lower()
+                
+                # 🔒 支持安全問答雜湊驗證與舊明碼相容
+                if db_answer_hash.startswith("$argon2"):
+                    try:
+                        ph.verify(db_answer_hash, input_answer)
+                        return True
+                    except VerifyMismatchError:
+                        return False
+                else:
+                    return db_answer_hash == input_answer
+    except Exception as e:
+        print(f"[Verify Answer Error]: {e}")
+        return False
 
 def update_password(email: str, new_password: str) -> bool:
     """Update the password for a user. Returns True if the row was updated."""
-    raise NotImplementedError("TODO: implement after designing your schema")
-
-
+    # 🔒 加密新密碼
+    hashed_password = ph.hash(new_password)
+    
+    sql = """
+        UPDATE user_credentials 
+        SET password_hash = %s 
+        WHERE user_id = (SELECT user_id FROM registered_users WHERE email = %s)
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (hashed_password, email.strip().lower()))
+                return cur.rowcount > 0
+    except Exception as e:
+        print(f"[Update Password Error]: {e}")
+        return False
+    
 # ── VECTOR / RAG QUERIES — do not modify ─────────────────────────────────────
 
 def query_policy_vector_search(embedding: list[float], top_k: int = VECTOR_TOP_K) -> list[dict]:
