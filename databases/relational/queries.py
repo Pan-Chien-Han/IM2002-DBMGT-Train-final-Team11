@@ -267,11 +267,66 @@ def query_user_bookings(user_email: str) -> dict:
     """
     Return a user's combined booking history (national rail + metro).
     """
-    # 先回傳結構正確的空歷史紀錄，防止 AI 代理人讀取時拋出錯誤
-    return {
-        'national_rail': [],
-        'metro': []
+    # 1. 查詢該使用者的 National Rail 火車訂票紀錄
+    sql_rail = """
+        SELECT 
+            b.booking_id, b.schedule_id, b.origin_station_id, b.destination_station_id,
+            b.travel_date, b.departure_time, b.ticket_type, b.fare_class, 
+            b.coach, b.seat_id, b.amount_usd, b.status
+        FROM national_rail_bookings b
+        JOIN registered_users u ON b.user_id = u.user_id
+        WHERE u.email = %s
+        ORDER BY b.travel_date DESC, b.departure_time DESC;
+    """
+
+    # 2. 查詢該使用者的 Metro 捷運搭乘/購票紀錄
+    sql_metro = """
+        SELECT 
+            m.trip_id, m.schedule_id, m.origin_station_id, m.destination_station_id,
+            m.travel_date, m.ticket_type, m.amount_usd, m.status
+        FROM metro_travel_history m
+        JOIN registered_users u ON m.user_id = u.user_id
+        WHERE u.email = %s
+        ORDER BY m.travel_date DESC;
+    """
+
+    results = {
+        "national_rail": [],
+        "metro": []
     }
+
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                email_clean = user_email.strip().lower()
+                
+                # 撈取火車訂票
+                cur.execute(sql_rail, (email_clean,))
+                rail_rows = cur.fetchall()
+                for row in rail_rows:
+                    r_dict = dict(row)
+                    if r_dict.get("travel_date"):
+                        r_dict["travel_date"] = r_dict["travel_date"].strftime("%Y-%m-%d")
+                    if r_dict.get("departure_time"):
+                        r_dict["departure_time"] = r_dict["departure_time"].strftime("%H:%M")
+                    # 將 NUMERIC 型態轉為 float，避免 JSON 解析崩潰
+                    r_dict["amount_usd"] = float(r_dict["amount_usd"]) if r_dict.get("amount_usd") else 0.0
+                    results["national_rail"].append(r_dict)
+
+                # 撈取捷運歷史
+                cur.execute(sql_metro, (email_clean,))
+                metro_rows = cur.fetchall()
+                for row in metro_rows:
+                    m_dict = dict(row)
+                    if m_dict.get("travel_date"):
+                        m_dict["travel_date"] = m_dict["travel_date"].strftime("%Y-%m-%d")
+                    m_dict["amount_usd"] = float(m_dict["amount_usd"]) if m_dict.get("amount_usd") else 0.0
+                    results["metro"].append(m_dict)
+
+                return results
+    except Exception as e:
+        print(f"[Query User Bookings Error] 查詢用戶訂票史失敗: {e}")
+        return {"national_rail": [], "metro": []}
 
 
 def query_payment_info(booking_id: str) -> Optional[dict]:
