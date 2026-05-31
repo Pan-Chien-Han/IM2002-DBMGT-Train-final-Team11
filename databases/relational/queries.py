@@ -271,7 +271,8 @@ def register_user(
     secret_answer: str,
 ) -> tuple[bool, str]:
     """
-    Register a new user with HASHED password for security.
+    Register a new user with HASHED password distributed into both registered_users 
+    and user_credentials tables according to schema.sql.
     """
     suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     user_id = f"RU-{suffix}"
@@ -279,40 +280,69 @@ def register_user(
     # 🔒 安全升級：遵照教授指示將新密碼進行 Argon2 雜湊加密
     hashed_password = ph.hash(password)
     
-    sql = """
+    # 💡 修正 1：寫入基本資料表（拿掉不存在的 password 欄位）
+    sql_user = """
         INSERT INTO registered_users (
-            user_id, email, full_name, first_name, surname, 
-            date_of_birth, password, secret_question, secret_answer, is_active
+            user_id, email, full_name, secret_question, secret_answer, registered_at, is_active
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s);
     """
     
+    # 💡 修正 2：將加密後的密碼寫入專屬的憑證表
+    sql_cred = """
+        INSERT INTO user_credentials (user_id, password_hash, created_at)
+        VALUES (%s, %s, %s);
+    """
+    
+    conn = None
     try:
-        with _connect() as conn:
-            with conn.cursor() as cur:
-                dob = f"{year_of_birth}-01-01"
-                full_name = f"{first_name.strip()} {surname.strip()}"
-                
-                cur.execute(sql, (
-                    user_id, email.strip().lower(), full_name, first_name.strip(), 
-                    surname.strip(), dob, hashed_password, secret_question, secret_answer.strip(), True
-                ))
+        # 開啟手動 Commit 模式確保兩張表同時寫入成功
+        conn = psycopg2.connect(PG_DSN)
+        conn.autocommit = False
+        
+        with conn.cursor() as cur:
+            now_time = datetime.now(timezone.utc)
+            full_name = f"{first_name.strip()} {surname.strip()}"
+            
+            # 1. 寫入 registered_users
+            cur.execute(sql_user, (
+                user_id, email.strip().lower(), full_name, 
+                secret_question, secret_answer.strip(), now_time, True
+            ))
+            
+            # 2. 寫入 user_credentials
+            cur.execute(sql_cred, (user_id, hashed_password, now_time))
+            
+        conn.commit()
         return True, user_id
     except psycopg2.errors.UniqueViolation:
+        if conn: conn.rollback()
         return False, "This email is already registered."
     except Exception as e:
+        if conn: conn.rollback()
         return False, f"Registration failed: {str(e)}"
+    finally:
+        if conn: conn.close()
 
 
 def login_user(email: str, password: str) -> Optional[dict]:
     """
-    Verify credentials using Argon2 hash verification.
+    Verify credentials using Argon2 hash verification against user_credentials table.
     """
-    # 💡 修正關鍵：把 SQL 裡的 first_name, surname 拿掉，因為妳們的資料表只有 full_name 欄位
+    # 💡 終極修正：利用 JOIN 將 registered_users 與 user_credentials 連接，撈取正確的 password_hash
     sql = """
-        SELECT user_id, email, full_name, phone, date_of_birth, is_active, password
-        FROM registered_users
-        WHERE email = %s
+        SELECT 
+            ru.user_id, 
+            ru.email, 
+            ru.full_name, 
+            ru.phone, 
+            ru.date_of_birth, 
+            ru.is_active, 
+            uc.password_hash
+        FROM registered_users ru
+        JOIN user_credentials uc 
+            ON ru.user_id = uc.user_id
+        WHERE ru.email = %s
     """
     try:
         with _connect() as conn:
@@ -328,28 +358,27 @@ def login_user(email: str, password: str) -> Optional[dict]:
                     print(f"[Login] 該帳號已被停用")
                     return None
 
-                # 🔒 安全校驗邏輯
-                db_password = str(user["password"]).strip()
+                # 🔒 安全校驗邏輯（配合 uc.password_hash 欄位）
+                db_password = str(user["password_hash"]).strip()
                 input_password = str(password).strip()
                 
                 try:
-                    # 情況 A：如果資料庫裡存的是雜湊值（以 $argon2 開頭），用安全方式驗證
+                    # 情況 A：如果是安全的 Argon2 雜湊密碼
                     if db_password.startswith("$argon2"):
                         ph.verify(db_password, input_password)
                     else:
-                        # 情況 B：相容舊的明碼 mock data
+                        # 情況 B：相容未加密的明碼 mock data
                         if db_password != input_password:
                             raise VerifyMismatchError()
                 except (VerifyMismatchError, Exception):
                     print("[Login] 密碼錯誤")
                     return None
 
-                # 💡 修正關鍵：從 full_name 自動拆分出姓與名，餵給前端 ui.py，避開資料庫欄位缺失錯誤
+                # 💡 從 full_name 自動分割出姓與名，完美餵給前端 ui.py
                 name_parts = str(user["full_name"]).strip().split(" ", 1)
                 first_name = name_parts[0] if len(name_parts) > 0 else ""
                 surname = name_parts[1] if len(name_parts) > 1 else ""
 
-                # 驗證成功，組織資料回傳給 ui.py
                 return {
                     "user_id": user["user_id"],
                     "email": user["email"],
