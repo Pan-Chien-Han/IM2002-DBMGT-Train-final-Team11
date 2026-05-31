@@ -109,7 +109,7 @@ def do_login(email: str, password: str):
             gr.update(value="Please enter your email and password.", visible=True),
             None,
             gr.update(), gr.update(), gr.update(), gr.update(),
-            gr.update(),  # Fix: Keep it neutral to prevent Gradio UI state conflicts.
+            gr.update(),  # Fix: Keep it neutral to prevent Gradio UI state conflicts
         )
 
     # Authenticate user credentials against the database
@@ -119,7 +119,7 @@ def do_login(email: str, password: str):
             gr.update(value="Incorrect email or password.", visible=True),
             None,
             gr.update(), gr.update(), gr.update(), gr.update(),
-            gr.update(),  # Fix: Keep it neutral to prevent Gradio UI state conflicts.
+            gr.update(),  # Fix: Keep it neutral to prevent Gradio UI state conflicts
         )
 
     display_name = f"{user['first_name']} {user['surname']}"
