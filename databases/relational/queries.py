@@ -467,15 +467,16 @@ def login_user(email: str, password: str) -> Optional[dict]:
 
 def get_user_secret_question(email: str) -> Optional[str]:
     """Return the secret question for a registered email, or None if not found."""
+    
     sql = """
-        SELECT uc.secret_question 
-        FROM user_credentials uc
-        JOIN registered_users ru ON uc.user_id = ru.user_id
-        WHERE ru.email = %s
+        SELECT secret_question 
+        FROM registered_users 
+        WHERE email = %s
     """
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
+                
                 cur.execute(sql, (email.strip().lower(),))
                 res = cur.fetchone()
                 return res[0] if res else None
