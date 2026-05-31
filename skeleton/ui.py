@@ -112,7 +112,7 @@ def do_login(email: str, password: str):
             gr.update(),  # Fix: Keep it neutral to prevent Gradio UI state conflicts.
         )
 
-    # Authenticate user credentials against the database
+    # Authenticate user credentials against the database.
     user = login_user(email.strip(), password)
     if user is None:
         return (
