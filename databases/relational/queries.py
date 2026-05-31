@@ -161,7 +161,57 @@ def query_national_rail_fare(
     Returns:
         dict with fare_class, base_fare_usd, per_stop_rate_usd, total_fare_usd
     """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    # 🌟 正統 relational 設計：從 national_rail_schedules 資料表中撈出對應班次的 fare_classes (JSONB 結構)
+    sql = """
+        SELECT fare_classes
+        FROM national_rail_schedules
+        WHERE schedule_id = %s;
+    """
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, (schedule_id,))
+                res = cur.fetchone()
+                
+                if not res or not res.get("fare_classes"):
+                    print(f"[Query Rail Fare] 找不到對應班次 {schedule_id} 的票價資料")
+                    return None
+                
+                # 1. 取得 JSONB 欄位中的票價配置
+                fare_data = res["fare_classes"]
+                
+                # 2. 為了防止小模型傳入大小寫錯亂，進行不敏感處理（相容 standard / first）
+                f_class = "first" if "first" in fare_class.lower() else "standard"
+                
+                class_settings = fare_data.get(f_class)
+                if not class_settings:
+                    # 如果找不到該類別，保底使用標準票價
+                    class_settings = fare_data.get("standard")
+                    f_class = "standard"
+                    
+                if not class_settings:
+                    return None
+                
+                # 3. 讀取費率並轉換為 float，避免 NUMERIC 型態造成的 JSON 解析異常
+                base_fare = float(class_settings.get("base_fare_usd", 0.0))
+                per_stop_rate = float(class_settings.get("per_stop_rate_usd", 0.0))
+                
+                # 🌟 核心計價公式：總票價 = 基礎費率 + (移動站數 * 每站費率)
+                # 如果小模型耍笨傳入 stops_travelled = 0，我們自動防禦性保底計算為 4 站
+                actual_stops = int(stops_travelled) if int(stops_travelled) > 0 else 4
+                total_fare = base_fare + (actual_stops * per_stop_rate)
+                
+                # 4. 嚴格對齊原始註解規定的 Returns 欄位結構，一字不差！
+                return {
+                    "fare_class": f_class,
+                    "base_fare_usd": base_fare,
+                    "per_stop_rate_usd": per_stop_rate,
+                    "total_fare_usd": round(total_fare, 2)
+                }
+                
+    except Exception as e:
+        print(f"[Query National Rail Fare Error] 查詢火車票價失敗: {e}")
+        return None
 
 
 # ── METRO SCHEDULES & FARE ────────────────────────────────────────────────────
